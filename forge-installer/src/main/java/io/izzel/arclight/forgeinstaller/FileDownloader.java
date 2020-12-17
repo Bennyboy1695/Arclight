@@ -23,29 +23,17 @@ public class FileDownloader implements Supplier<Path> {
 
     private final String url;
     private final String target;
-    private final String hash;
 
-    public FileDownloader(String url, String target, String hash) {
+    public FileDownloader(String url, String target) {
         this.url = url;
         this.target = target;
-        this.hash = hash;
     }
 
     @Override
     public Path get() {
         try {
+            String hash;
             Path path = new File(target).toPath();
-            if (Files.exists(path) && Files.isDirectory(path)) {
-                Files.delete(path);
-            }
-            if (Files.exists(path)) {
-                if (Files.isDirectory(path)) {
-                    throw LocalizedException.checked("downloader.dir", target);
-                } else {
-                    if (Util.hash(path).equals(hash)) return path;
-                    else Files.delete(path);
-                }
-            }
             if (!Files.exists(path) && path.getParent() != null) {
                 Files.createDirectories(path.getParent());
             }
@@ -56,12 +44,7 @@ public class FileDownloader implements Supplier<Path> {
                 throw LocalizedException.checked("downloader.timeout", e, url);
             }
             if (Files.exists(path)) {
-                String hash = Util.hash(path);
-                if (hash.equals(this.hash)) return path;
-                else {
-                    Files.delete(path);
-                    throw LocalizedException.checked("downloader.hash-not-match", this.hash, hash, url);
-                }
+                return path;
             } else {
                 throw LocalizedException.checked("downloader.not-found", url);
             }
@@ -73,7 +56,7 @@ public class FileDownloader implements Supplier<Path> {
         }
     }
 
-    private InputStream redirect(URL url) throws IOException {
+    InputStream redirect(URL url) throws IOException {
         return redirect(url, new HashSet<>());
     }
 

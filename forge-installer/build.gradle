@@ -12,6 +12,7 @@ repositories {
 
 dependencies {
     compile 'com.google.code.gson:gson:2.8.0'
+    compile 'org.json:json:20201115'
     compile project(':arclight-api')
     compile project(':i18n-config')
 }

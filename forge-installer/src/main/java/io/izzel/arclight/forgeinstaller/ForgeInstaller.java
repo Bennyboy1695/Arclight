@@ -9,6 +9,8 @@ import com.google.gson.JsonParser;
 import io.izzel.arclight.api.Unsafe;
 import io.izzel.arclight.i18n.ArclightLocale;
 import io.izzel.arclight.i18n.LocalizedException;
+import org.json.JSONObject;
+import org.json.XML;
 
 import java.io.File;
 import java.io.IOException;
@@ -16,18 +18,10 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.net.MalformedURLException;
 import java.net.URL;
-import java.nio.file.FileSystem;
-import java.nio.file.FileSystems;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.AbstractMap;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.nio.file.*;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
@@ -39,41 +33,34 @@ import java.util.jar.Manifest;
 
 public class ForgeInstaller {
 
-    private static final String[] MAVEN_REPO = {
-        "https://arclight.mcxk.net/"
-    };
-    private static final String INSTALLER_URL = "https://arclight.mcxk.net/net/minecraftforge/forge/%s-%s/forge-%s-%s-installer.jar";
-    private static final String SERVER_URL = "https://arclight.mcxk.net/net/minecraft/server/minecraft_server.%s.jar";
-    private static final Map<String, String> VERSION_HASH = ImmutableMap.of(
-        "1.14.4", "3dc3d84a581f14691199cf6831b71ed1296a9fdf",
-        "1.15.2", "bb2b6b1aefcd70dfd1892149ac3a215f6c636b07",
-        "1.16.3", "f02f4473dbf152c23d7d484952121db0b36698cb",
-        "1.16.4", "35139deedbd5182953cf1caa23835da59ca3d7cd"
-    );
+    private static final String FORGE_INSTALLER_URL = "https://files.minecraftforge.net/maven/net/minecraftforge/forge/%s/forge-%s-installer.jar";
+    private static final String FORGE_RELEASE_VERSION = Util.getForgeMavenRelease();
 
     public static void install() throws Throwable {
-        InputStream stream = ForgeInstaller.class.getResourceAsStream("/META-INF/installer.json");
-        InstallInfo installInfo = new Gson().fromJson(new InputStreamReader(stream), InstallInfo.class);
-        List<Supplier<Path>> suppliers = checkMavenNoSource(installInfo.libraries);
-        Path path = Paths.get(String.format("forge-%s-%s.jar", installInfo.installer.minecraft, installInfo.installer.forge));
-        if (!suppliers.isEmpty() || !Files.exists(path)) {
+        Path path = Paths.get(String.format("forge-%s.jar", FORGE_RELEASE_VERSION));
+        if (!Files.exists(path)) {
+            System.out.println("Forge not found, please install version: " + FORGE_RELEASE_VERSION);
+            return;
+        } else {
+            classpath(path);
+        }
+/*        Path path = Paths.get(String.format("forge-%s-installer.jar", FORGE_RELEASE_VERSION));
+        if (!Files.exists(path)) {
             ArclightLocale.info("downloader.info2");
             ExecutorService pool = Executors.newFixedThreadPool(8);
-            CompletableFuture<?>[] array = suppliers.stream().map(reportSupply(pool)).toArray(CompletableFuture[]::new);
             if (!Files.exists(path)) {
-                CompletableFuture<?>[] futures = installForge(installInfo, pool);
+                CompletableFuture<?>[] futures = installForge(pool);
                 handleFutures(futures);
                 ArclightLocale.info("downloader.forge-install");
                 ProcessBuilder builder = new ProcessBuilder();
-                builder.command("java", "-Djava.net.useSystemProxies=true", "-jar", String.format("forge-%s-%s-installer.jar", installInfo.installer.minecraft, installInfo.installer.forge), "--installServer", ".");
+                builder.command("java", "-Djava.net.useSystemProxies=true", "-jar", String.format("forge-%s-installer.jar", FORGE_RELEASE_VERSION), "--installServer", ".");
                 builder.inheritIO();
                 Process process = builder.start();
                 process.waitFor();
             }
-            handleFutures(array);
             pool.shutdownNow();
-        }
-        classpath(path, installInfo);
+        }*/
+        /*classpath(path);*/
     }
 
     private static Function<Supplier<Path>, CompletableFuture<Path>> reportSupply(ExecutorService service) {
@@ -83,30 +70,31 @@ public class ForgeInstaller {
         });
     }
 
-    private static CompletableFuture<?>[] installForge(InstallInfo info, ExecutorService pool) throws Exception {
-        String format = String.format(INSTALLER_URL, info.installer.minecraft, info.installer.forge, info.installer.minecraft, info.installer.forge);
-        String dist = String.format("forge-%s-%s-installer.jar", info.installer.minecraft, info.installer.forge);
-        FileDownloader fd = new FileDownloader(format, dist, info.installer.hash);
+    private static CompletableFuture<?>[] installForge(ExecutorService pool) throws Exception {
+        String url = String.format(FORGE_INSTALLER_URL, FORGE_RELEASE_VERSION, FORGE_RELEASE_VERSION);
+        String dist = String.format("forge-%s-installer.jar", FORGE_RELEASE_VERSION);
+        FileDownloader fd = new FileDownloader(url, dist);
         CompletableFuture<?> installerFuture = reportSupply(pool).apply(fd).thenAccept(path -> {
             try {
-                FileSystem system = FileSystems.newFileSystem(path, null);
+                FileSystem system = FileSystems.newFileSystem(path ,null);
                 Map<String, Map.Entry<String, String>> map = new HashMap<>();
                 Path profile = system.getPath("install_profile.json");
                 map.putAll(profileLibraries(profile));
                 Path version = system.getPath("version.json");
                 map.putAll(profileLibraries(version));
-                List<Supplier<Path>> suppliers = checkMaven(map);
-                CompletableFuture<?>[] array = suppliers.stream().map(reportSupply(pool)).toArray(CompletableFuture[]::new);
-                handleFutures(array);
+                map.forEach((s, stringStringEntry) -> System.out.println("S: " + s + " SS: " + stringStringEntry));
+                /*List<Supplier<Path>> suppliers = checkMaven(map);*/
+/*                CompletableFuture<?>[] array = suppliers.stream().map(reportSupply(pool)).toArray(CompletableFuture[]::new);
+                handleFutures(array);*/
             } catch (IOException e) {
                 e.printStackTrace();
             }
         });
-        CompletableFuture<?> serverFuture = reportSupply(pool).apply(
-            new FileDownloader(String.format(SERVER_URL, info.installer.minecraft),
-                String.format("minecraft_server.%s.jar", info.installer.minecraft), VERSION_HASH.get(info.installer.minecraft))
-        );
-        return new CompletableFuture<?>[]{installerFuture, serverFuture};
+/*        CompletableFuture<?> serverFuture = reportSupply(pool).apply(
+                new FileDownloader(String.format(SERVER_URL, "1.16.4"),
+                        String.format("minecraft_server.%s.jar", info.installer.minecraft), VERSION_HASH.get(info.installer.minecraft))
+        );*/
+        return new CompletableFuture<?>[]{installerFuture};
     }
 
     private static void handleFutures(CompletableFuture<?>... futures) {
@@ -154,7 +142,7 @@ public class ForgeInstaller {
             String hash = entry.getValue().getKey();
             String url = entry.getValue().getValue();
             String path = "libraries/" + Util.mavenToPath(maven);
-            if (new File(path).exists()) {
+/*            if (new File(path).exists()) {
                 try {
                     String fileHash = Util.hash(path);
                     if (!fileHash.equals(hash)) {
@@ -165,19 +153,20 @@ public class ForgeInstaller {
                 }
             } else {
                 incomplete.add(new MavenDownloader(MAVEN_REPO, maven, path, hash, url));
-            }
+            }*/
         }
         return incomplete;
     }
 
-    private static void classpath(Path path, InstallInfo installInfo) throws Throwable {
+    private static void classpath(Path path) throws Throwable {
         JarFile jarFile = new JarFile(path.toFile());
         Manifest manifest = jarFile.getManifest();
         String[] split = manifest.getMainAttributes().getValue("Class-Path").split(" ");
         for (String s : split) {
             addToPath(Paths.get(s));
         }
-        for (String library : installInfo.libraries.keySet()) {
+        List<String> libs = Arrays.asList("org.ow2.asm:asm-util:8.0.1","org.ow2.asm:asm-analysis:8.0.1","org.yaml:snakeyaml:1.26","org.xerial:sqlite-jdbc:3.32.3","mysql:mysql-connector-java:5.1.49","commons-lang:commons-lang:2.6","com.googlecode.json-simple:json-simple:1.1.1","org.apache.logging.log4j:log4j-jul:2.11.2","net.md-5:SpecialSource:1.8.6","org.jline:jline-terminal-jansi:3.12.1","org.fusesource.jansi:jansi:1.18","org.jline:jline-terminal:3.12.1","org.jline:jline-reader:3.12.1","jline:jline:2.12.1");
+        for (String library : libs) {
             addToPath(Paths.get("libraries", Util.mavenToPath(library)));
         }
         addToPath(path);

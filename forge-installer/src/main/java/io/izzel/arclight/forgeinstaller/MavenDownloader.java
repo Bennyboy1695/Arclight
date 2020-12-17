@@ -45,7 +45,7 @@ public class MavenDownloader implements Supplier<Path> {
         List<Exception> exceptions = new ArrayList<>();
         for (String url : this.urls) {
             try {
-                return new FileDownloader(url, target, hash).get();
+                return new FileDownloader(url, target).get();
             } catch (Exception e) {
                 exceptions.add(e);
             }
